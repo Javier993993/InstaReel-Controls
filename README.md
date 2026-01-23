@@ -1,11 +1,12 @@
 # InstaReel Controls
 
-Adds TikTok-style volume and playback controls to Instagram Reels on the web.
+Instagram's web reels drove me a little nuts, so I built the controls I wanted
+and figured I might as well share them.
 
 ## Features
 - Vertical volume slider that opens from the native Instagram sound button
 - Click to open slider, click again to toggle mute, double click to mute
-- Progress bar with time and play/pause status
+- Progress bar with time + play/pause status, aligned to the video
 - Remembers your volume level across sessions
 - Right-click a reel to copy a "share current timestamp" link
 
@@ -27,7 +28,7 @@ GitHub: https://github.com/cealiax3/InstaReel-Controls
 <img src="assets/screenshots/share-timestamp.png" width="640" alt="Share current timestamp menu" />
 
 ## Notes
-- Works on `instagram.com` pages that contain `<video>` elements.
+- Works on `instagram.com` reels and feed posts that contain `<video>` elements.
 - Firefox and Chrome Web Store releases are planned later.
 
 ## Development
