@@ -22,6 +22,10 @@ GitHub: https://github.com/cealiax3/InstaReel-Controls
 - Drag the slider to adjust volume (saved automatically).
 - Right-click a reel and pick "Share current timestamp" to copy a link.
 
+## Screenshots
+<img src="assets/screenshots/volume-progress.png" width="720" alt="Volume popover and progress bar" />
+<img src="assets/screenshots/share-timestamp.png" width="360" alt="Share current timestamp menu" />
+
 ## Notes
 - Works on `instagram.com` pages that contain `<video>` elements.
 - Firefox and Chrome Web Store releases are planned later.
