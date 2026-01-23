@@ -1,4 +1,4 @@
-# Reel Controller
+# InstaReel Controls
 
 Adds TikTok-style volume and playback controls to Instagram Reels on the web.
 
@@ -13,6 +13,9 @@ Adds TikTok-style volume and playback controls to Instagram Reels on the web.
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
 3. Click "Load unpacked" and select this folder.
+
+## Repo
+GitHub: https://github.com/cealiax3/InstaReel-Controls
 
 ## Usage
 - Hover or click the Instagram sound button to open the volume slider.

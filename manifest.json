@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Reel Controller",
+  "name": "InstaReel Controls",
   "version": "0.1.0",
-  "description": "Adds TikTok-style volume and playback controls to Instagram Reels.",
+  "description": "Adds TikTok-style volume and playback controls to Instagram Reels on the web.",
   "action": {
-    "default_title": "Reel Controller"
+    "default_title": "InstaReel Controls"
   },
   "content_scripts": [
     {
