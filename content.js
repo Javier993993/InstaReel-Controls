@@ -5,14 +5,20 @@
   const OBSERVER_CONFIG = { childList: true, subtree: true };
   const DEFAULT_PROGRESS_INSETS = { left: 88, right: 88 };
   const VOLUME_STORAGE_KEY = "rcVolume";
+  const MUTE_STORAGE_KEY = "rcMuted";
   const MIN_PROGRESS_WIDTH = 140;
   const CONTEXT_MENU_LABEL = "Share current timestamp";
+  const MAX_TIMESTAMP_ATTEMPTS = 6;
+  const TIMESTAMP_STORAGE_PREFIX = "rcTimestamp:";
+  const TIMESTAMP_TTL_MS = 2 * 60 * 1000;
   let scanQueued = false;
   let contextMenuEl = null;
   let contextMenuItemEl = null;
   let activeContextUi = null;
   let shareTimestampAppliedUrl = null;
   let shareTimestampAppliedVideo = null;
+  let timestampNavSeconds = null;
+  let timestampNavPath = null;
   const VOLUME_TERMS = [
     "sound",
     "audio",
@@ -23,6 +29,18 @@
     "stumm",
   ];
   const LEFT_UI_TERMS = ["tag", "tagged", "person", "people", "mark", "markier"];
+  const MUTED_LABEL_TERMS = [
+    "muted",
+    "sound off",
+    "audio off",
+    "sound muted",
+    "audio muted",
+    "stummgeschaltet",
+    "ton aus",
+    "stumm",
+  ];
+  const SVG_ORIGINAL = new WeakMap();
+  const SVG_UNMUTED = new WeakMap();
   const buildSelectors = (terms) =>
     terms
       .map(
@@ -61,6 +79,116 @@
     return terms.some((term) => lower.includes(term));
   };
 
+  const getButtonLabel = (button) => {
+    if (!button) {
+      return "";
+    }
+    const direct =
+      button.getAttribute("aria-label") ||
+      button.getAttribute("title") ||
+      button.getAttribute("data-tooltip-text") ||
+      button.getAttribute("data-tooltip-content");
+    if (direct) {
+      return direct;
+    }
+    const descendant = button.querySelector(
+      "[aria-label],[title],[data-tooltip-text],[data-tooltip-content]"
+    );
+    if (descendant) {
+      return (
+        descendant.getAttribute("aria-label") ||
+        descendant.getAttribute("title") ||
+        descendant.getAttribute("data-tooltip-text") ||
+        descendant.getAttribute("data-tooltip-content") ||
+        ""
+      );
+    }
+    return "";
+  };
+
+  const setButtonLabel = (button, label) => {
+    if (!button || !label) {
+      return;
+    }
+    const nodes = [
+      button,
+      ...button.querySelectorAll(
+        "[aria-label],[title],[data-tooltip-text],[data-tooltip-content]"
+      ),
+    ];
+    nodes.forEach((node) => {
+      node.setAttribute("aria-label", label);
+      node.setAttribute("title", label);
+      node.setAttribute("data-tooltip-content", label);
+      node.setAttribute("data-tooltip-text", label);
+    });
+  };
+
+  const getUnmutedLabel = (label) => {
+    const lower = (label || "").toLowerCase();
+    if (lower.includes("ton")) {
+      return "Ton an";
+    }
+    if (lower.includes("audio") || lower.includes("sound")) {
+      return "Sound on";
+    }
+    return "Sound on";
+  };
+
+  const getMutedLabel = (label) => {
+    const lower = (label || "").toLowerCase();
+    if (lower.includes("ton")) {
+      return "Ton stummgeschaltet";
+    }
+    if (lower.includes("audio") || lower.includes("sound")) {
+      return "Sound off";
+    }
+    return "Sound off";
+  };
+
+  const getUnmutedSvgMarkup = (svg) => {
+    if (!svg) {
+      return "";
+    }
+    if (!SVG_ORIGINAL.has(svg)) {
+      SVG_ORIGINAL.set(svg, svg.innerHTML);
+    }
+    if (SVG_UNMUTED.has(svg)) {
+      return SVG_UNMUTED.get(svg);
+    }
+    const original = SVG_ORIGINAL.get(svg) || "";
+    const temp = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    temp.innerHTML = original;
+    const use = temp.querySelector("use");
+    if (use) {
+      const href =
+        use.getAttribute("href") || use.getAttribute("xlink:href") || "";
+      let replacement = href;
+      replacement = replacement.replace("sound_off", "sound_on");
+      replacement = replacement.replace("volume_off", "volume_on");
+      replacement = replacement.replace("audio_off", "audio_on");
+      replacement = replacement.replace("muted", "unmuted");
+      replacement = replacement.replace("mute", "unmute");
+      replacement = replacement.replace("_off", "_on");
+      if (replacement !== href && replacement) {
+        use.setAttribute("href", replacement);
+        use.setAttribute("xlink:href", replacement);
+      }
+    }
+    temp.querySelectorAll("line, polyline").forEach((el) => el.remove());
+    temp.querySelectorAll("path, circle, rect").forEach((el) => {
+      const stroke = el.getAttribute("stroke");
+      const fill = el.getAttribute("fill");
+      if (stroke && (!fill || fill === "none")) {
+        el.remove();
+      }
+    });
+    const cleaned = temp.innerHTML;
+    const result = cleaned && cleaned !== original ? cleaned : "";
+    SVG_UNMUTED.set(svg, result);
+    return result;
+  };
+
   const distanceToRect = (x, y, rect) => {
     const dx = Math.max(rect.left - x, 0, x - rect.right);
     const dy = Math.max(rect.top - y, 0, y - rect.bottom);
@@ -82,6 +210,22 @@
       Math.max(videoRect.width, videoRect.height) * 0.22
     );
     const withinX = buttonRect.right >= videoRect.right - margin;
+    const withinY = buttonRect.bottom >= videoRect.bottom - margin;
+    const overlapX =
+      Math.min(buttonRect.right, videoRect.right) -
+      Math.max(buttonRect.left, videoRect.left);
+    const overlapY =
+      Math.min(buttonRect.bottom, videoRect.bottom) -
+      Math.max(buttonRect.top, videoRect.top);
+    return withinX && withinY && overlapX > 0 && overlapY > 0;
+  };
+
+  const isNearBottomLeft = (buttonRect, videoRect) => {
+    const margin = Math.min(
+      140,
+      Math.max(videoRect.width, videoRect.height) * 0.22
+    );
+    const withinX = buttonRect.left <= videoRect.left + margin;
     const withinY = buttonRect.bottom >= videoRect.bottom - margin;
     const overlapX =
       Math.min(buttonRect.right, videoRect.right) -
@@ -192,6 +336,26 @@
     return null;
   };
 
+  const isReelsFeedPage = () => {
+    const path = window.location.pathname.toLowerCase();
+    return path.startsWith("/reels");
+  };
+
+  const isHomeFeedPage = () => {
+    const path = window.location.pathname.toLowerCase();
+    return path === "/" || path === "/home";
+  };
+
+  const isFeedPostVideo = (video) => {
+    if (!video) {
+      return false;
+    }
+    if (!isHomeFeedPage()) {
+      return false;
+    }
+    return Boolean(video.closest("article"));
+  };
+
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
   const getStoredVolume = () => {
@@ -214,6 +378,26 @@
     try {
       const clamped = clamp(value, 0, 1);
       window.localStorage.setItem(VOLUME_STORAGE_KEY, String(clamped));
+    } catch (error) {
+      return;
+    }
+  };
+
+  const getStoredMute = () => {
+    try {
+      const raw = window.localStorage.getItem(MUTE_STORAGE_KEY);
+      if (raw === null) {
+        return null;
+      }
+      return raw === "1";
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const setStoredMute = (isMuted) => {
+    try {
+      window.localStorage.setItem(MUTE_STORAGE_KEY, isMuted ? "1" : "0");
     } catch (error) {
       return;
     }
@@ -270,6 +454,51 @@
         continue;
       }
       const score = Math.hypot(videoRect.right - rect.right, videoRect.bottom - rect.bottom);
+      if (score < bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    return best;
+  };
+
+  const findLeftButtonNearVideo = (video) => {
+    if (!video) {
+      return null;
+    }
+    const videoRect = video.getBoundingClientRect();
+    if (videoRect.width <= 0 || videoRect.height <= 0) {
+      return null;
+    }
+    const candidates = Array.from(
+      document.querySelectorAll("button,[role='button'],[tabindex]")
+    );
+    let best = null;
+    let bestScore = Infinity;
+    for (const candidate of candidates) {
+      if (!candidate || candidate.closest(".rc-overlay")) {
+        continue;
+      }
+      const rect = candidate.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        continue;
+      }
+      if (!rectsOverlap(rect, videoRect)) {
+        continue;
+      }
+      if (!isNearBottomLeft(rect, videoRect)) {
+        continue;
+      }
+      if (!isSmallControl(rect, videoRect)) {
+        continue;
+      }
+      if (!candidate.querySelector("svg, path, use")) {
+        continue;
+      }
+      const score = Math.hypot(
+        rect.left - videoRect.left,
+        videoRect.bottom - rect.bottom
+      );
       if (score < bestScore) {
         bestScore = score;
         best = candidate;
@@ -362,7 +591,11 @@
       }
       node = node.parentElement;
     }
-    return findClosestButton(video, LEFT_UI_SELECTORS, true);
+    const labeled = findClosestButton(video, LEFT_UI_SELECTORS, true);
+    if (labeled) {
+      return labeled;
+    }
+    return findLeftButtonNearVideo(video);
   };
 
   const findVideoForButton = (button) => {
@@ -380,26 +613,85 @@
     return findClosestVideoToButton(button);
   };
 
+  const updateOverlayBounds = (ui) => {
+    if (!ui || !ui.overlay || !ui.video || !ui.host) {
+      return;
+    }
+    const hostRect = ui.host.getBoundingClientRect();
+    const videoRect = ui.video.getBoundingClientRect();
+    if (
+      hostRect.width <= 0 ||
+      hostRect.height <= 0 ||
+      videoRect.width <= 0 ||
+      videoRect.height <= 0
+    ) {
+      return;
+    }
+    const top = Math.round(videoRect.top - hostRect.top);
+    const left = Math.round(videoRect.left - hostRect.left);
+    ui.overlay.style.inset = "auto";
+    ui.overlay.style.top = `${top}px`;
+    ui.overlay.style.left = `${left}px`;
+    ui.overlay.style.width = `${Math.round(videoRect.width)}px`;
+    ui.overlay.style.height = `${Math.round(videoRect.height)}px`;
+    ui.overlay.style.right = "auto";
+    ui.overlay.style.bottom = "auto";
+  };
+
   const positionVolumePopover = (ui) => {
     if (!ui || !ui.volumePopover || !ui.host) {
       return;
     }
+    updateLayoutMode(ui);
+    updateOverlayBounds(ui);
     const button = ui.nativeButton || findNativeVolumeButton(ui.video);
     if (!button) {
       return;
     }
     ui.nativeButton = button;
-    const hostRect = ui.host.getBoundingClientRect();
+    const overlayRect = ui.overlay.getBoundingClientRect();
     const buttonRect = button.getBoundingClientRect();
-    if (hostRect.width <= 0 || hostRect.height <= 0) {
+    if (overlayRect.width <= 0 || overlayRect.height <= 0) {
       return;
     }
-    const anchorX = buttonRect.left - hostRect.left + buttonRect.width / 2;
-    const anchorY = buttonRect.top - hostRect.top;
+    const anchorX = buttonRect.left - overlayRect.left + buttonRect.width / 2;
+    const anchorY = buttonRect.top - overlayRect.top;
     const popoverHeight = ui.volumePopover.offsetHeight || 0;
-    const top = Math.max(anchorY - popoverHeight - 10, 8);
-    ui.volumePopover.style.left = `${Math.round(anchorX)}px`;
+    const popoverWidth = ui.volumePopover.offsetWidth || 0;
+    const gap = ui.isReels ? 2 : 10;
+    const minTop = 8;
+    const maxTop = Math.max(minTop, overlayRect.height - popoverHeight - 8);
+    let top = clamp(anchorY - popoverHeight - gap, minTop, maxTop);
+    let left = anchorX;
+
+    ui.volumePopover.style.left = `${Math.round(left)}px`;
     ui.volumePopover.style.top = `${Math.round(top)}px`;
+
+    if (ui.isReels && popoverWidth && popoverHeight) {
+      const popoverRect = ui.volumePopover.getBoundingClientRect();
+      if (rectsOverlap(popoverRect, buttonRect)) {
+        const shift = Math.round(popoverWidth / 2 + buttonRect.width / 2 + 8);
+        const minLeft = popoverWidth / 2 + 8;
+        const maxLeft = overlayRect.width - popoverWidth / 2 - 8;
+        let nextLeft = anchorX - shift;
+        if (nextLeft < minLeft) {
+          nextLeft = anchorX + shift;
+        }
+        left = clamp(nextLeft, minLeft, maxLeft);
+        ui.volumePopover.style.left = `${Math.round(left)}px`;
+
+        const updatedRect = ui.volumePopover.getBoundingClientRect();
+        if (rectsOverlap(updatedRect, buttonRect)) {
+          const belowTop = buttonRect.bottom - overlayRect.top + 6;
+          if (belowTop + popoverHeight <= overlayRect.height - 8) {
+            top = clamp(belowTop, minTop, maxTop);
+          } else {
+            top = clamp(anchorY - popoverHeight - 14, minTop, maxTop);
+          }
+          ui.volumePopover.style.top = `${Math.round(top)}px`;
+        }
+      }
+    }
   };
 
   const openVolumePopover = (ui) => {
@@ -437,7 +729,117 @@
     if (wasMuted && ui.video.volume === 0) {
       ui.video.volume = 0.5;
     }
+    setStoredMute(ui.video.muted);
     updateButtons(ui.video, ui);
+  };
+
+  const canUnmuteNow = () => {
+    const activation = navigator.userActivation;
+    if (!activation) {
+      return false;
+    }
+    return activation.isActive || activation.hasBeenActive;
+  };
+
+  const ensureStoredUnmute = (ui) => {
+    if (!ui || !ui.video) {
+      return;
+    }
+    const stored = getStoredVolume();
+    if (stored === null || stored <= 0) {
+      ui.pendingUnmute = false;
+      return;
+    }
+    const storedMute = getStoredMute();
+    if (storedMute === true) {
+      ui.pendingUnmute = false;
+      return;
+    }
+    if (!canUnmuteNow()) {
+      ui.pendingUnmute = true;
+      return;
+    }
+    if (!ui.video.muted) {
+      setStoredMute(false);
+      ui.pendingUnmute = false;
+      return;
+    }
+    if (!ui.nativeButton || !ui.nativeButton.isConnected) {
+      const found = findNativeVolumeButton(ui.video);
+      if (found) {
+        bindNativeVolumeButton(ui, found);
+      }
+    }
+    if (!triggerNativeToggle(ui)) {
+      ui.video.muted = false;
+    }
+    if (!ui.video.muted) {
+      setStoredMute(false);
+      ui.pendingUnmute = false;
+    }
+  };
+
+  const syncNativeVolumeIcon = (ui) => {
+    if (!ui) {
+      return;
+    }
+    if (!ui.nativeButton || !ui.nativeButton.isConnected) {
+      const found = ui.video ? findNativeVolumeButton(ui.video) : null;
+      if (found) {
+        bindNativeVolumeButton(ui, found);
+      }
+    }
+    if (!ui.nativeButton) {
+      return;
+    }
+    const label = getButtonLabel(ui.nativeButton);
+    const svg = ui.nativeButton.querySelector("svg");
+    const isMuted = ui.video ? ui.video.muted || ui.video.volume === 0 : true;
+
+    if (svg && !SVG_ORIGINAL.has(svg)) {
+      SVG_ORIGINAL.set(svg, svg.innerHTML);
+    }
+
+    if (isMuted) {
+      ui.nativeButton.classList.remove("rc-native-unmuted");
+      if (svg && SVG_ORIGINAL.has(svg)) {
+        const original = SVG_ORIGINAL.get(svg);
+        if (svg.innerHTML !== original) {
+          svg.innerHTML = original;
+        }
+      }
+      if (label && !labelMatches(label, MUTED_LABEL_TERMS)) {
+        setButtonLabel(ui.nativeButton, getMutedLabel(label));
+      }
+      return;
+    }
+
+    let updated = false;
+    if (svg && labelMatches(label, MUTED_LABEL_TERMS)) {
+      const unmuted = getUnmutedSvgMarkup(svg);
+      if (unmuted) {
+        svg.innerHTML = unmuted;
+        updated = true;
+      }
+      setButtonLabel(ui.nativeButton, getUnmutedLabel(label));
+    }
+    if (!updated) {
+      ui.nativeButton.classList.add("rc-native-unmuted");
+      setButtonLabel(ui.nativeButton, getUnmutedLabel(label || ""));
+    }
+  };
+
+  const scheduleIconSync = (ui) => {
+    if (!ui || !ui.isReels) {
+      return;
+    }
+    if (ui.iconSyncTimer) {
+      window.clearTimeout(ui.iconSyncTimer);
+    }
+    ui.iconSyncTimer = window.setTimeout(() => {
+      ui.iconSyncTimer = null;
+      syncNativeVolumeIcon(ui);
+    }, 140);
   };
 
   const showVolumeValue = (ui, value) => {
@@ -514,40 +916,61 @@
     }, 140);
   };
 
+  const updateLayoutMode = (ui) => {
+    if (!ui || !ui.overlay) {
+      return;
+    }
+    const isReels = isReelsFeedPage();
+    const isFeed = isFeedPostVideo(ui.video);
+    if (ui.isReels === isReels && ui.isFeed === isFeed) {
+      return;
+    }
+    ui.isReels = isReels;
+    ui.isFeed = isFeed;
+    ui.overlay.classList.toggle("rc-reels", isReels);
+    ui.overlay.classList.toggle("rc-feed", isFeed);
+  };
+
   const updateProgressInsets = (ui) => {
     if (!ui || !ui.overlay || !ui.host || !ui.video) {
       return;
     }
-    const hostRect = ui.host.getBoundingClientRect();
-    if (hostRect.width <= 0) {
+    updateLayoutMode(ui);
+    const overlayRect = ui.overlay.getBoundingClientRect();
+    if (overlayRect.width <= 0) {
       return;
     }
 
-    let leftInset = DEFAULT_PROGRESS_INSETS.left;
-    let rightInset = DEFAULT_PROGRESS_INSETS.right;
+    const isCompact = ui.isReels && overlayRect.width < 480;
+    if (ui.isCompact !== isCompact) {
+      ui.isCompact = isCompact;
+      ui.overlay.classList.toggle("rc-compact", isCompact);
+    }
+
+    const isReels = ui.isReels;
+    let leftInset = isReels ? 16 : 24;
+    let rightInset = isReels ? 16 : DEFAULT_PROGRESS_INSETS.right;
 
     const leftButton = findLeftUiButton(ui.video);
     if (leftButton) {
       const rect = leftButton.getBoundingClientRect();
-      leftInset = rect.right - hostRect.left + 8;
+      leftInset = rect.right - overlayRect.left + 8;
     }
 
     const rightButton = ui.nativeButton || findNativeVolumeButton(ui.video);
     if (rightButton) {
       const rect = rightButton.getBoundingClientRect();
-      rightInset = hostRect.right - rect.left + 8;
+      rightInset = overlayRect.right - rect.left + 8;
     }
 
     if (leftButton && !rightButton) {
       rightInset = leftInset;
-    } else if (rightButton && !leftButton) {
-      leftInset = rightInset;
     }
 
-    leftInset = clamp(leftInset, 16, hostRect.width - 16);
-    rightInset = clamp(rightInset, 16, hostRect.width - 16);
+    leftInset = clamp(leftInset, 16, overlayRect.width - 16);
+    rightInset = clamp(rightInset, 16, overlayRect.width - 16);
 
-    const maxTotal = hostRect.width - MIN_PROGRESS_WIDTH;
+    const maxTotal = overlayRect.width - MIN_PROGRESS_WIDTH;
     if (leftInset + rightInset > maxTotal) {
       const overflow = leftInset + rightInset - maxTotal;
       const reduceLeft = Math.min(leftInset - 16, overflow / 2);
@@ -562,14 +985,79 @@
 
   const buildShareUrl = (video) => {
     const seconds = Math.max(0, Math.floor(video.currentTime || 0));
-    const url = new URL(window.location.href);
+    const base = resolveShareBaseUrl(video) || window.location.href;
+    const url = new URL(base, window.location.origin);
     url.searchParams.set("rc_t", String(seconds));
     return url.toString();
   };
 
-  const getTimestampFromUrl = () => {
+  const PERMALINK_PATH_RE = /^\/(reel|reels|p|tv)\/[^/?#]+/i;
+
+  const resolvePermalink = (href) => {
+    if (!href) {
+      return null;
+    }
     try {
-      const url = new URL(window.location.href);
+      const url = new URL(href, window.location.origin);
+      if (PERMALINK_PATH_RE.test(url.pathname)) {
+        return url.toString();
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  };
+
+  const resolveShareBaseUrl = (video) => {
+    if (!video) {
+      return null;
+    }
+    const roots = [];
+    const article = video.closest("article");
+    if (article) {
+      roots.push(article);
+    }
+    let node = video.parentElement;
+    for (let depth = 0; node && depth < 4; depth += 1) {
+      roots.push(node);
+      node = node.parentElement;
+    }
+    const seen = new Set();
+    for (const root of roots) {
+      if (!root || seen.has(root)) {
+        continue;
+      }
+      seen.add(root);
+      if (root.matches && root.matches("a[href]")) {
+        const resolved = resolvePermalink(root.getAttribute("href"));
+        if (resolved) {
+          return resolved;
+        }
+      }
+      const anchors = Array.from(root.querySelectorAll("a[href]"));
+      for (const anchor of anchors) {
+        const resolved = resolvePermalink(anchor.getAttribute("href"));
+        if (resolved) {
+          return resolved;
+        }
+      }
+    }
+    const canonical = document.querySelector("link[rel='canonical']");
+    if (canonical) {
+      const resolved = resolvePermalink(canonical.getAttribute("href"));
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return null;
+  };
+
+  const parseTimestampFromUrl = (urlString) => {
+    if (!urlString) {
+      return null;
+    }
+    try {
+      const url = new URL(urlString);
       const raw = url.searchParams.get("rc_t");
       if (!raw) {
         return null;
@@ -583,6 +1071,102 @@
       return null;
     }
   };
+
+  const getPathnameSafe = (urlString) => {
+    try {
+      return new URL(urlString).pathname;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const getTimestampStorageKey = () =>
+    `${TIMESTAMP_STORAGE_PREFIX}${window.location.pathname}`;
+
+  const storeTimestamp = (seconds) => {
+    try {
+      const key = getTimestampStorageKey();
+      const payload = {
+        value: seconds,
+        storedAt: Date.now(),
+      };
+      window.sessionStorage.setItem(key, JSON.stringify(payload));
+    } catch (error) {
+      return;
+    }
+  };
+
+  const readStoredTimestamp = () => {
+    try {
+      const key = getTimestampStorageKey();
+      const raw = window.sessionStorage.getItem(key);
+      if (!raw) {
+        return null;
+      }
+      const payload = JSON.parse(raw);
+      if (!payload || typeof payload.value !== "number") {
+        window.sessionStorage.removeItem(key);
+        return null;
+      }
+      if (Date.now() - (payload.storedAt || 0) > TIMESTAMP_TTL_MS) {
+        window.sessionStorage.removeItem(key);
+        return null;
+      }
+      return payload.value;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const clearStoredTimestamp = () => {
+    try {
+      window.sessionStorage.removeItem(getTimestampStorageKey());
+    } catch (error) {
+      return;
+    }
+  };
+
+  const captureInitialTimestamp = () => {
+    if (timestampNavSeconds !== null) {
+      return;
+    }
+    const direct = parseTimestampFromUrl(window.location.href);
+    if (direct !== null) {
+      timestampNavSeconds = direct;
+      timestampNavPath = getPathnameSafe(window.location.href);
+      storeTimestamp(direct);
+      return;
+    }
+    const referrer = parseTimestampFromUrl(document.referrer);
+    if (referrer !== null) {
+      timestampNavSeconds = referrer;
+      timestampNavPath =
+        getPathnameSafe(document.referrer) || window.location.pathname;
+      storeTimestamp(referrer);
+    }
+  };
+
+  const clearTimestampNavigation = () => {
+    timestampNavSeconds = null;
+    timestampNavPath = null;
+  };
+
+  const getTimestampFromUrl = () => {
+    captureInitialTimestamp();
+    if (timestampNavSeconds !== null) {
+      return timestampNavSeconds;
+    }
+    return readStoredTimestamp();
+  };
+
+  const shouldAutoPauseForTimestamp = () => {
+    if (timestampNavSeconds === null || !timestampNavPath) {
+      return false;
+    }
+    return timestampNavPath === window.location.pathname && isReelsFeedPage();
+  };
+
+  captureInitialTimestamp();
 
   const getVisibleArea = (rect) => {
     const visibleX = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);
@@ -618,6 +1202,14 @@
     return best;
   };
 
+  const getPrimaryUi = () => {
+    const primary = getPrimaryVideoInView();
+    if (!primary) {
+      return null;
+    }
+    return CONTROLLED_VIDEOS.get(primary) || null;
+  };
+
   const applyTimestampFromUrl = (ui) => {
     if (!ui || !ui.video) {
       return;
@@ -626,7 +1218,21 @@
     if (seconds === null) {
       return;
     }
+    if (shouldAutoPauseForTimestamp() && !ui.timestampPauseApplied) {
+      ui.video.pause();
+      ui.timestampPauseApplied = true;
+      ui.pendingPlay = true;
+      const stored = getStoredVolume();
+      const storedMute = getStoredMute();
+      if (stored !== null && stored > 0 && storedMute !== true) {
+        ui.pendingUnmute = true;
+      }
+    }
     const url = window.location.href;
+    if (ui.timestampUrl !== url) {
+      ui.timestampUrl = url;
+      ui.timestampAttempts = 0;
+    }
     if (shareTimestampAppliedUrl === url && shareTimestampAppliedVideo === ui.video) {
       return;
     }
@@ -634,16 +1240,44 @@
     if (primary && primary !== ui.video) {
       return;
     }
-    if (!Number.isFinite(ui.video.duration) || ui.video.duration <= 0) {
+    if (ui.timestampAttempts >= MAX_TIMESTAMP_ATTEMPTS) {
       return;
     }
-    const target = clamp(seconds, 0, Math.max(0, ui.video.duration - 0.05));
-    if (Math.abs(ui.video.currentTime - target) > 0.4) {
-      ui.video.currentTime = target;
+    if (ui.timestampTimer) {
+      return;
     }
-    updateTimeAndProgress(ui.video, ui);
-    shareTimestampAppliedUrl = url;
-    shareTimestampAppliedVideo = ui.video;
+    ui.timestampTimer = window.setTimeout(() => {
+      ui.timestampTimer = null;
+      if (!Number.isFinite(ui.video.duration) || ui.video.duration <= 0) {
+        ui.timestampAttempts += 1;
+        applyTimestampFromUrl(ui);
+        return;
+      }
+      const target = clamp(seconds, 0, Math.max(0, ui.video.duration - 0.05));
+      if (Math.abs(ui.video.currentTime - target) > 0.4) {
+        if (typeof ui.video.fastSeek === "function") {
+          ui.video.fastSeek(target);
+        } else {
+          ui.video.currentTime = target;
+        }
+      }
+      updateTimeAndProgress(ui.video, ui);
+      ui.timestampAttempts += 1;
+      window.setTimeout(() => {
+        if (shareTimestampAppliedUrl === url && shareTimestampAppliedVideo === ui.video) {
+          return;
+        }
+        const diff = Math.abs(ui.video.currentTime - target);
+        if (diff <= 0.6) {
+          shareTimestampAppliedUrl = url;
+          shareTimestampAppliedVideo = ui.video;
+          clearStoredTimestamp();
+          clearTimestampNavigation();
+          return;
+        }
+        applyTimestampFromUrl(ui);
+      }, 220);
+    }, 120);
   };
 
   const copyToClipboard = async (text) => {
@@ -764,6 +1398,7 @@
     ui.layoutQueued = true;
     window.requestAnimationFrame(() => {
       ui.layoutQueued = false;
+      updateOverlayBounds(ui);
       updateProgressInsets(ui);
       if (ui.volumePopover.classList.contains("rc-open")) {
         positionVolumePopover(ui);
@@ -866,6 +1501,8 @@
     const isMuted = video.muted || video.volume === 0;
     ui.overlay.classList.toggle("rc-muted", isMuted);
     ui.statusIcon.classList.toggle("rc-paused", video.paused);
+    syncNativeVolumeIcon(ui);
+    scheduleIconSync(ui);
   };
 
   const updateTimeAndProgress = (video, ui) => {
@@ -961,6 +1598,16 @@
       layoutQueued: false,
       allowNativeClick: false,
       valueTimer: null,
+      isReels: false,
+      isCompact: false,
+      isFeed: false,
+      iconSyncTimer: null,
+      pendingUnmute: false,
+      pendingPlay: false,
+      timestampPauseApplied: false,
+      timestampAttempts: 0,
+      timestampTimer: null,
+      timestampUrl: null,
     };
 
     const handleDocumentPointerDown = (event) => {
@@ -1000,6 +1647,9 @@
           video.muted = false;
         }
       }
+      if (value > 0) {
+        setStoredMute(false);
+      }
       setStoredVolume(value);
       showVolumeValue(ui, value);
       updateButtons(video, ui);
@@ -1034,7 +1684,11 @@
     overlay.addEventListener("pointerdown", stopEvent);
     overlay.addEventListener("pointerup", stopEvent);
 
-    video.addEventListener("play", () => updateButtons(video, ui));
+    video.addEventListener("play", () => {
+      applyStoredVolume(video);
+      updateButtons(video, ui);
+      applyTimestampFromUrl(ui);
+    });
     video.addEventListener("pause", () => updateButtons(video, ui));
     video.addEventListener("volumechange", () => {
       const value = Math.round(video.volume * 100);
@@ -1054,6 +1708,7 @@
     video.addEventListener("durationchange", handleMetadata);
     video.addEventListener("loadedmetadata", handleMetadata);
 
+    updateLayoutMode(ui);
     updateButtons(video, ui);
     updateTimeAndProgress(video, ui);
     if (video.readyState >= 1) {
@@ -1087,6 +1742,7 @@
       if (nativeButton) {
         bindNativeVolumeButton(existingUi, nativeButton);
       }
+      ensureStoredUnmute(existingUi);
       return;
     }
 
@@ -1107,6 +1763,7 @@
     if (nativeButton) {
       bindNativeVolumeButton(ui, nativeButton);
     }
+    ensureStoredUnmute(ui);
   };
 
   const scanForVideos = () => {
@@ -1145,6 +1802,9 @@
     document.documentElement.dataset.rcGlobalVolume = "1";
 
     const handleGlobalClick = (event) => {
+      if (event && event.isTrusted === false) {
+        return;
+      }
       const target = event.target instanceof Element ? event.target : null;
       if (!target) {
         return;
@@ -1161,6 +1821,9 @@
     };
 
     const handleGlobalDoubleClick = (event) => {
+      if (event && event.isTrusted === false) {
+        return;
+      }
       const target = event.target instanceof Element ? event.target : null;
       if (!target) {
         return;
@@ -1214,11 +1877,53 @@
     document.addEventListener("contextmenu", handleContextMenu, true);
   };
 
+  const bindUserActivationHandlers = () => {
+    if (document.documentElement.dataset.rcActivation === "1") {
+      return;
+    }
+    document.documentElement.dataset.rcActivation = "1";
+
+    const handleActivation = (event) => {
+      const ui = getPrimaryUi();
+      if (!ui || (!ui.pendingUnmute && !ui.pendingPlay)) {
+        return;
+      }
+      if (event && event.isTrusted === false) {
+        return;
+      }
+      const target = event && event.target instanceof Element ? event.target : null;
+      if (target && !ui.host.contains(target)) {
+        return;
+      }
+      if (event && typeof event.preventDefault === "function") {
+        event.preventDefault();
+      }
+      if (event && typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+      applyStoredVolume(ui.video);
+      ensureStoredUnmute(ui);
+      updateButtons(ui.video, ui);
+      syncNativeVolumeIcon(ui);
+      if (ui.pendingPlay && ui.video.paused) {
+        const playPromise = ui.video.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(() => {});
+        }
+      }
+      ui.pendingPlay = false;
+    };
+
+    document.addEventListener("click", handleActivation, true);
+    document.addEventListener("keydown", handleActivation, true);
+  };
+
   const init = () => {
     scanForVideos();
     startObserver();
     bindGlobalVolumeHandlers();
     bindShareContextMenu();
+    bindUserActivationHandlers();
   };
 
   if (document.readyState === "loading") {
