@@ -1156,6 +1156,9 @@
     if (timestampNavSeconds !== null) {
       return timestampNavSeconds;
     }
+    if (!timestampNavPath || timestampNavPath !== window.location.pathname) {
+      return null;
+    }
     return readStoredTimestamp();
   };
 
