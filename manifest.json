@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Reel Controller",
+  "version": "0.1.0",
+  "description": "Adds TikTok-style volume and playback controls to Instagram Reels.",
+  "action": {
+    "default_title": "Reel Controller"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
