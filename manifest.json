@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "InstaReel Controls",
   "version": "0.1.0",
-  "description": "Adds TikTok-style volume and playback controls to Instagram Reels on the web.",
+  "description": "Better web controls for Instagram Reels: volume popover, progress bar, timestamp sharing.",
   "action": {
     "default_title": "InstaReel Controls"
   },
