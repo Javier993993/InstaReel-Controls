@@ -35,6 +35,7 @@ GitHub: https://github.com/cealiax3/InstaReel-Controls
   </tr>
 </table>
 <img src="assets/screenshots/share-timestamp.png" width="520" alt="Share current timestamp menu" />
+<img src="assets/screenshots/stories-slider.png" width="520" alt="Stories horizontal volume slider" />
 
 ## Notes
 - Works on `instagram.com` reels and feed posts that contain `<video>` elements.

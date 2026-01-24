@@ -243,6 +243,45 @@
   bottom: 12px;
 }
 
+.rc-overlay.rc-stories .rc-progress {
+  display: none;
+}
+
+.rc-volume-popover.rc-stories {
+  --rc-bg: rgba(0, 0, 0, 0.36);
+  --rc-border: rgba(255, 255, 255, 0.12);
+  --rc-highlight: rgba(255, 255, 255, 0.2);
+  --rc-text: #f7f7f7;
+  --rc-track: rgba(255, 255, 255, 0.45);
+  --rc-track-soft: rgba(255, 255, 255, 0.25);
+  --rc-thumb: #ffffff;
+  --rc-volume-track: rgba(220, 225, 230, 0.65);
+  --rc-volume-thumb: #e6e9ee;
+  flex-direction: row;
+  gap: 8px;
+  padding: 6px 8px;
+  transform: translate(0, 0) scale(0.98);
+}
+
+.rc-volume-popover.rc-stories.rc-open {
+  transform: translate(0, 0) scale(1);
+}
+
+.rc-volume-popover.rc-stories .rc-volume-track {
+  width: 120px;
+  height: auto;
+}
+
+.rc-volume-popover.rc-stories .rc-vertical {
+  width: 120px;
+  height: 12px;
+  transform: none;
+}
+
+.rc-volume-popover.rc-stories .rc-volume-value {
+  font-size: 10px;
+}
+
 .rc-context-menu {
   position: fixed;
   z-index: 2147483647;

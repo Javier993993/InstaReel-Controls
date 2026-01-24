@@ -303,6 +303,9 @@
     if (direct) {
       return direct;
     }
+    if (isStoriesPage()) {
+      return null;
+    }
     const clickable = target.closest("button,[role='button'],[tabindex]");
     if (clickable) {
       const video = findClosestVideoToButton(clickable);
@@ -339,6 +342,11 @@
   const isReelsFeedPage = () => {
     const path = window.location.pathname.toLowerCase();
     return path.startsWith("/reels");
+  };
+
+  const isStoriesPage = () => {
+    const path = window.location.pathname.toLowerCase();
+    return path.startsWith("/stories");
   };
 
   const isHomeFeedPage = () => {
@@ -579,6 +587,9 @@
     if (labeled) {
       return labeled;
     }
+    if (isStoriesPage()) {
+      return null;
+    }
     return findVolumeButtonNearVideo(video);
   };
 
@@ -643,6 +654,7 @@
       return;
     }
     updateLayoutMode(ui);
+    syncPopoverHost(ui);
     updateOverlayBounds(ui);
     const button = ui.nativeButton || findNativeVolumeButton(ui.video);
     if (!button) {
@@ -654,10 +666,28 @@
     if (overlayRect.width <= 0 || overlayRect.height <= 0) {
       return;
     }
-    const anchorX = buttonRect.left - overlayRect.left + buttonRect.width / 2;
-    const anchorY = buttonRect.top - overlayRect.top;
     const popoverHeight = ui.volumePopover.offsetHeight || 0;
     const popoverWidth = ui.volumePopover.offsetWidth || 0;
+
+    if (ui.isStories) {
+      const centerY = buttonRect.top + buttonRect.height / 2;
+      const minTop = 8;
+      const maxTop = Math.max(minTop, window.innerHeight - popoverHeight - 8);
+      const top = clamp(centerY - popoverHeight / 2, minTop, maxTop);
+      const gap = 8;
+      let left = buttonRect.left - popoverWidth - gap;
+      const maxLeft = Math.max(8, window.innerWidth - popoverWidth - 8);
+      if (left < 8) {
+        left = buttonRect.right + gap;
+      }
+      left = clamp(left, 8, maxLeft);
+      ui.volumePopover.style.left = `${Math.round(left)}px`;
+      ui.volumePopover.style.top = `${Math.round(top)}px`;
+      return;
+    }
+
+    const anchorX = buttonRect.left - overlayRect.left + buttonRect.width / 2;
+    const anchorY = buttonRect.top - overlayRect.top;
     const gap = ui.isReels ? 2 : 10;
     const minTop = 8;
     const maxTop = Math.max(minTop, overlayRect.height - popoverHeight - 8);
@@ -698,6 +728,7 @@
     if (!ui || !ui.volumePopover) {
       return;
     }
+    syncPopoverHost(ui);
     if (ui.closeTimer) {
       window.clearTimeout(ui.closeTimer);
       ui.closeTimer = null;
@@ -904,16 +935,18 @@
     if (!ui || !ui.volumePopover) {
       return;
     }
+    updateLayoutMode(ui);
     if (ui.closeTimer) {
       window.clearTimeout(ui.closeTimer);
     }
+    const delay = ui.isStories ? 600 : 140;
     ui.closeTimer = window.setTimeout(() => {
       ui.closeTimer = null;
       if (ui.isButtonHover || ui.isPopoverHover) {
         return;
       }
       ui.volumePopover.classList.remove("rc-open");
-    }, 140);
+    }, delay);
   };
 
   const updateLayoutMode = (ui) => {
@@ -922,13 +955,36 @@
     }
     const isReels = isReelsFeedPage();
     const isFeed = isFeedPostVideo(ui.video);
-    if (ui.isReels === isReels && ui.isFeed === isFeed) {
+    const isStories = isStoriesPage();
+    if (ui.isReels === isReels && ui.isFeed === isFeed && ui.isStories === isStories) {
       return;
     }
     ui.isReels = isReels;
     ui.isFeed = isFeed;
+    ui.isStories = isStories;
     ui.overlay.classList.toggle("rc-reels", isReels);
     ui.overlay.classList.toggle("rc-feed", isFeed);
+    ui.overlay.classList.toggle("rc-stories", isStories);
+    if (ui.volumePopover) {
+      ui.volumePopover.classList.toggle("rc-stories", isStories);
+    }
+  };
+
+  const syncPopoverHost = (ui) => {
+    if (!ui || !ui.volumePopover || !ui.overlay || !document.body) {
+      return;
+    }
+    if (ui.isStories) {
+      if (ui.volumePopover.parentElement !== document.body) {
+        document.body.appendChild(ui.volumePopover);
+      }
+      ui.volumePopover.style.position = "fixed";
+    } else {
+      if (ui.volumePopover.parentElement !== ui.overlay) {
+        ui.overlay.prepend(ui.volumePopover);
+      }
+      ui.volumePopover.style.position = "";
+    }
   };
 
   const updateProgressInsets = (ui) => {
@@ -936,6 +992,9 @@
       return;
     }
     updateLayoutMode(ui);
+    if (ui.isStories) {
+      return;
+    }
     const overlayRect = ui.overlay.getBoundingClientRect();
     if (overlayRect.width <= 0) {
       return;
@@ -1127,6 +1186,9 @@
   };
 
   const captureInitialTimestamp = () => {
+    if (isStoriesPage()) {
+      return;
+    }
     if (timestampNavSeconds !== null) {
       return;
     }
@@ -1152,6 +1214,9 @@
   };
 
   const getTimestampFromUrl = () => {
+    if (isStoriesPage()) {
+      return null;
+    }
     captureInitialTimestamp();
     if (timestampNavSeconds !== null) {
       return timestampNavSeconds;
@@ -1604,6 +1669,7 @@
       isReels: false,
       isCompact: false,
       isFeed: false,
+      isStories: false,
       iconSyncTimer: null,
       pendingUnmute: false,
       pendingPlay: false,
@@ -1854,6 +1920,9 @@
     ensureContextMenu();
 
     const handleContextMenu = (event) => {
+      if (isStoriesPage()) {
+        return;
+      }
       const target = event.target instanceof Element ? event.target : null;
       const x = event.clientX;
       const y = event.clientY;
@@ -1887,6 +1956,9 @@
     document.documentElement.dataset.rcActivation = "1";
 
     const handleActivation = (event) => {
+      if (isStoriesPage()) {
+        return;
+      }
       const ui = getPrimaryUi();
       if (!ui || (!ui.pendingUnmute && !ui.pendingPlay)) {
         return;
