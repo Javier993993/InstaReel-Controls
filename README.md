@@ -24,8 +24,16 @@ GitHub: https://github.com/cealiax3/InstaReel-Controls
 - Right-click a reel and pick "Share current timestamp" to copy a link.
 
 ## Screenshots
-<img src="assets/screenshots/progress-only.png" width="520" alt="Progress bar embedded in the native UI" />
-<img src="assets/screenshots/volume-popover.png" height="200" alt="Volume popover with percentage" />
+<table>
+  <tr>
+    <td>
+      <img src="assets/screenshots/progress-only.png" width="520" alt="Progress bar embedded in the native UI" />
+    </td>
+    <td>
+      <img src="assets/screenshots/volume-popover.png" height="200" alt="Volume popover with percentage" />
+    </td>
+  </tr>
+</table>
 <img src="assets/screenshots/share-timestamp.png" width="520" alt="Share current timestamp menu" />
 
 ## Notes
